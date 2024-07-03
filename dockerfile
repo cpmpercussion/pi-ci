@@ -7,35 +7,35 @@ FROM ubuntu:22.04 as builder
 # Use shared build directory
 ARG BUILD_DIR
 
+# Install dependencies
+ARG DEBIAN_FRONTEND="noninteractive"
+RUN apt-get update && apt install -y \
+    # bc \
+    # bison \
+    # crossbuild-essential-arm64 \
+    # flex \
+    # git \
+    # libc6-dev \
+    libguestfs-tools \
+    # libssl-dev \
+    # linux-image-generic \
+    # make \
+    wget \
+    # openssl \
+    xz-utils
+
 # Kernel source
 ARG KERNEL_GIT=https://github.com/raspberrypi/linux.git
 ARG KERNEL_BRANCH=rpi-5.4.y
 
 # Distro download
-ARG DISTRO_FILE=2023-12-11-raspios-bookworm-arm64-lite.img
-ARG DISTRO_IMG=https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2023-12-11/$DISTRO_FILE.xz
+ARG DISTRO_FILE=2024-03-15-raspios-bookworm-arm64-lite.img
+ARG DISTRO_IMG=https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2024-03-15/$DISTRO_FILE.xz
 
 # Kernel compile options
 ARG KERNEL=kernel8
 ARG ARCH=arm64
 ARG CROSS_COMPILE=aarch64-linux-gnu-
-
-# Install dependencies
-ARG DEBIAN_FRONTEND="noninteractive"
-RUN apt-get update && apt install -y \
-    bc \
-    bison \
-    crossbuild-essential-arm64 \
-    flex \
-    git \
-    libc6-dev \
-    libguestfs-tools \
-    libssl-dev \
-    linux-image-generic \
-    make \
-    wget \
-    openssl \
-    xz-utils
 
 # Download raspbian distro
 RUN wget -nv -O /tmp/$DISTRO_FILE.xz $DISTRO_IMG \
@@ -45,46 +45,48 @@ RUN wget -nv -O /tmp/$DISTRO_FILE.xz $DISTRO_IMG \
 RUN mkdir /mnt/root /mnt/boot \
  && guestfish add tmp/$DISTRO_FILE : run : mount /dev/sda1 / : copy-out / /mnt/boot : umount / : mount /dev/sda2 / : copy-out / /mnt/root
 
-# Clone the RPI kernel repo
-RUN git clone --single-branch --branch $KERNEL_BRANCH $KERNEL_GIT $BUILD_DIR/linux/
+# # Clone the RPI kernel repo
+# RUN git clone --single-branch --branch $KERNEL_BRANCH $KERNEL_GIT $BUILD_DIR/linux/
 
-# Add WireGuard kernel module
-RUN git clone https://git.zx2c4.com/wireguard-linux-compat $BUILD_DIR/wireguard-compat \
- && $BUILD_DIR/wireguard-compat/kernel-tree-scripts/jury-rig.sh $BUILD_DIR/linux/
+# # Add WireGuard kernel module
+# RUN git clone https://git.zx2c4.com/wireguard-linux-compat $BUILD_DIR/wireguard-compat \
+#  && $BUILD_DIR/wireguard-compat/kernel-tree-scripts/jury-rig.sh $BUILD_DIR/linux/
 
-# Copy build configuration
-COPY src/conf/.config $BUILD_DIR/linux/
-# Build kernel, modules and device tree blobs
-RUN make -C $BUILD_DIR/linux/ -j$(nproc) Image modules dtbs
+# # Copy build configuration
+# COPY src/conf/.config $BUILD_DIR/linux/
+# # Build kernel, modules and device tree blobs
+# RUN make -C $BUILD_DIR/linux/ -j$(nproc) Image modules dtbs
 
-# Copy kernel, modules and device tree blobs to extracted distro
-RUN cp $BUILD_DIR/linux/arch/arm64/boot/Image /mnt/boot/kernel8.img \
- && cp $BUILD_DIR/linux/arch/arm64/boot/dts/broadcom/*.dtb /mnt/boot/ \
- && cp $BUILD_DIR/linux/arch/arm64/boot/dts/overlays/*.dtb* /mnt/boot/overlays/ \
- && cp $BUILD_DIR/linux/arch/arm64/boot/dts/overlays/README /mnt/boot/overlays/ \
- && make -C $BUILD_DIR/linux/ INSTALL_MOD_PATH=/mnt/root modules_install
+# # Copy kernel, modules and device tree blobs to extracted distro
+# RUN cp $BUILD_DIR/linux/arch/arm64/boot/Image /mnt/boot/kernel8.img \
+#  && cp $BUILD_DIR/linux/arch/arm64/boot/dts/broadcom/*.dtb /mnt/boot/ \
+#  && cp $BUILD_DIR/linux/arch/arm64/boot/dts/overlays/*.dtb* /mnt/boot/overlays/ \
+#  && cp $BUILD_DIR/linux/arch/arm64/boot/dts/overlays/README /mnt/boot/overlays/ \
+#  && make -C $BUILD_DIR/linux/ INSTALL_MOD_PATH=/mnt/root modules_install
 
-# Copy boot configuration
-COPY src/conf/fstab /mnt/root/etc/
-COPY src/conf/cmdline.txt /mnt/boot/
+# # Copy boot configuration
+# COPY src/conf/fstab /mnt/root/etc/
+# COPY src/conf/cmdline.txt /mnt/boot/
 
 # Run SSH server on startup
 RUN touch /mnt/boot/ssh
+# Add pi user back in
+COPY src/conf/userconf.txt /mnt/boot/
 
-# Allow SSH root login with no password
-RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /mnt/root/etc/ssh/sshd_config \
- && sed -i 's/#PermitEmptyPasswords no/permitEmptyPasswords yes/' /mnt/root/etc/ssh/sshd_config
+# # Allow SSH root login with no password
+# RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /mnt/root/etc/ssh/sshd_config \
+#  && sed -i 's/#PermitEmptyPasswords no/permitEmptyPasswords yes/' /mnt/root/etc/ssh/sshd_config
 
-# Enable root login and remove user 'pi'
-RUN sed -i 's/^root:\*:/root::/' /mnt/root/etc/shadow \
- && sed -i '/^pi/d' /mnt/root/etc/shadow \
- && sed -i '/^pi/d' /mnt/root/etc/passwd \
- && sed -i '/^pi/d' /mnt/root/etc/group \
- && rm -r /mnt/root/home/pi
+# # Enable root login and remove user 'pi'
+# RUN sed -i 's/^root:\*:/root::/' /mnt/root/etc/shadow \
+#  && sed -i '/^pi/d' /mnt/root/etc/shadow \
+#  && sed -i '/^pi/d' /mnt/root/etc/passwd \
+#  && sed -i '/^pi/d' /mnt/root/etc/group \
+#  && rm -r /mnt/root/home/pi
 
-# Setup root auto login
-RUN mkdir /mnt/root/etc/systemd/system/serial-getty@ttyAMA0.service.d/
-COPY src/conf/login.conf /mnt/root/etc/systemd/system/serial-getty@ttyAMA0.service.d/override.conf
+# # Setup root auto login
+# RUN mkdir /mnt/root/etc/systemd/system/serial-getty@ttyAMA0.service.d/
+# COPY src/conf/login.conf /mnt/root/etc/systemd/system/serial-getty@ttyAMA0.service.d/override.conf
 
 # Create new distro image from modified boot and root
 RUN guestfish -N $BUILD_DIR/distro.img=bootroot:vfat:ext4:2G \

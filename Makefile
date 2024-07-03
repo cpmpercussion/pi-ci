@@ -1,0 +1,12 @@
+DOCKERHUB_USERNAME = charlepm
+CONTAINER_NAME = impsy-rpi-imager
+CONTAINER_VERSION = 0.1.0
+
+build: Dockerfile
+	docker build --tag $(DOCKERHUB_USERNAME)/$(CONTAINER_NAME):$(CONTAINER_VERSION) .
+
+run: 
+	docker run --rm -p 2222:2222 $(DOCKERHUB_USERNAME)/$(CONTAINER_NAME):$(CONTAINER_VERSION) start
+
+push: build
+	docker push $(DOCKERHUB_USERNAME)/$(CONTAINER_NAME):$(CONTAINER_VERSION)
